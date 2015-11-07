@@ -17,13 +17,14 @@ class MountManagerExtension:
 	# features extension supports
 	features = ()
 
-	def __init__(self, parent, window):
+	def __init__(self, parent, window, accessible_prefix=None):
 		self._parent = parent
 		self._window = window
 		self._application = self._parent._application
 
 		# create user interface
 		self._container = gtk.VBox(False, 5)
+		self._container.get_accessible().set_name(accessible_prefix + '_box')
 		self._controls = gtk.HBox(False, 5)
 
 		separator = gtk.HSeparator()

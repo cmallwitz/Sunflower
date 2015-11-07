@@ -44,8 +44,8 @@ class GioExtension(MountManagerExtension):
 	features = set([ExtensionFeatures.SYSTEM_WIDE,])
 	scheme = None
 
-	def __init__(self, parent, window):
-		MountManagerExtension.__init__(self, parent, window)
+	def __init__(self, parent, window, accessible_prefix=None):
+		MountManagerExtension.__init__(self, parent, window, accessible_prefix)
 
 	def _mount(self, uri, domain, username, password=None):
 		"""Perform actual mounting operation with specified data"""
@@ -149,7 +149,7 @@ class SambaExtension(GioExtension):
 	scheme = 'smb'
 
 	def __init__(self, parent, window):
-		GioExtension.__init__(self, parent, window)
+		GioExtension.__init__(self, parent, window, accessible_prefix=self.scheme)
 
 		# create user interface
 		list_container = gtk.ScrolledWindow()
@@ -158,6 +158,7 @@ class SambaExtension(GioExtension):
 
 		self._store = gtk.ListStore(str, str, str, str, str, str, bool, str)
 		self._list = gtk.TreeView(model=self._store)
+		self._list.get_accessible().set_name(self.scheme + '_table')
 
 		cell_name = gtk.CellRendererText()
 		cell_uri = gtk.CellRendererText()
@@ -425,6 +426,7 @@ class SambaExtension(GioExtension):
 										"Are you sure about this?"
 									).format(entry_name)
 								)
+			dialog.get_accessible().set_name('mount_confirmation_unmount')
 			dialog.set_default_response(gtk.RESPONSE_YES)
 			result = dialog.run()
 			dialog.destroy()
@@ -502,8 +504,8 @@ class FtpExtension(GioExtension):
 	"""
 	scheme = 'ftp'
 
-	def __init__(self, parent, window):
-		GioExtension.__init__(self, parent, window)
+	def __init__(self, parent, window, accessible_prefix=scheme):
+		GioExtension.__init__(self, parent, window, accessible_prefix)
 
 		# create user interface
 		list_container = gtk.ScrolledWindow()
@@ -512,6 +514,7 @@ class FtpExtension(GioExtension):
 
 		self._store = gtk.ListStore(str, str, str, str, bool, str)
 		self._list = gtk.TreeView(model=self._store)
+		self._list.get_accessible().set_name(self.scheme + '_table')
 
 		cell_name = gtk.CellRendererText()
 		cell_uri = gtk.CellRendererText()
@@ -728,6 +731,7 @@ class FtpExtension(GioExtension):
 										"Are you sure about this?"
 									).format(entry_name)
 								)
+			dialog.get_accessible().set_name('mount_confirmation_delete')
 			dialog.set_default_response(gtk.RESPONSE_YES)
 			result = dialog.run()
 			dialog.destroy()
@@ -839,6 +843,9 @@ class SftpExtension(FtpExtension):
 	"""
 	scheme = 'sftp'
 
+	def __init__(self, parent, window):
+		FtpExtension.__init__(self, parent, window, accessible_prefix=self.scheme)
+
 	def _create_dialog(self, parent):
 		"""Create input dialog for mount"""
 		return SftpInputDialog(parent)
@@ -855,7 +862,7 @@ class DavExtension(GioExtension):
 	scheme = 'webdav'
 
 	def __init__(self, parent, window):
-		GioExtension.__init__(self, parent, window)
+		GioExtension.__init__(self, parent, window, accessible_prefix=self.scheme)
 
 		# create user interface
 		list_container = gtk.ScrolledWindow()
@@ -864,6 +871,7 @@ class DavExtension(GioExtension):
 
 		self._store = gtk.ListStore(str, str, int, str, str, bool, str)
 		self._list = gtk.TreeView(model=self._store)
+		self._list.get_accessible().set_name(self.scheme + '_table')
 
 		cell_name = gtk.CellRendererText()
 		cell_uri = gtk.CellRendererText()
@@ -1082,6 +1090,7 @@ class DavExtension(GioExtension):
 					"Are you sure about this?"
 				).format(entry_name)
 			)
+			dialog.get_accessible().set_name('mount_confirmation_delete')
 			dialog.set_default_response(gtk.RESPONSE_YES)
 			result = dialog.run()
 			dialog.destroy()

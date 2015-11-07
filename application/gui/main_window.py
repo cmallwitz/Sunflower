@@ -606,6 +606,7 @@ class MainWindow(gtk.Window):
 		gtk.rc_parse_string(rc_string)
 
 		self.left_notebook = gtk.Notebook()
+		self.left_notebook.get_accessible().set_name('left_notebook')
 		self.left_notebook.set_scrollable(True)
 		self.left_notebook.connect('focus-in-event', self._transfer_focus)
 		self.left_notebook.connect('page-added', self._page_added)
@@ -613,6 +614,7 @@ class MainWindow(gtk.Window):
 		self.left_notebook.set_group_id(0)
 
 		self.right_notebook = gtk.Notebook()
+		self.right_notebook.get_accessible().set_name('right_notebook')
 		self.right_notebook.set_scrollable(True)
 		self.right_notebook.connect('focus-in-event', self._transfer_focus)
 		self.right_notebook.connect('page-added', self._page_added)

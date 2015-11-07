@@ -72,6 +72,7 @@ class MountsManagerWindow(gtk.Window):
 		hbox_controls = gtk.HBox(False, 5)
 
 		self._tabs = gtk.Notebook()
+		self._tabs.get_accessible().set_name('mount_tabs')
 		self._tabs.set_show_tabs(False)
 		self._tabs.set_show_border(False)
 		self._tabs.connect('switch-page', self._handle_page_switch)
@@ -83,6 +84,7 @@ class MountsManagerWindow(gtk.Window):
 		label_container.set_size_request(130, -1)
 
 		self._tab_labels = gtk.TreeView(model=self._pages_store)
+		self._tab_labels.get_accessible().set_name('mounttypes')
 
 		cell_icon = gtk.CellRendererPixbuf()
 		cell_label = gtk.CellRendererText()
@@ -335,7 +337,7 @@ class MountsExtension(MountManagerExtension):
 	features = set([ExtensionFeatures.SYSTEM_WIDE,])
 
 	def __init__(self, parent, window):
-		MountManagerExtension.__init__(self, parent, window)
+		MountManagerExtension.__init__(self, parent, window, accessible_prefix='mounts')
 
 		# create store for mounts
 		self._store = gtk.ListStore(str, str, str, str, object, bool)
@@ -347,6 +349,7 @@ class MountsExtension(MountManagerExtension):
 		container.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
 
 		self._list = gtk.TreeView(model=self._store)
+		self._list.get_accessible().set_name('mounts_table')
 		self._list.set_show_expanders(True)
 		self._list.set_search_column(MountsColumn.NAME)
 
@@ -520,7 +523,7 @@ class VolumesExtension(MountManagerExtension):
 	"""Extension that provides access to volumes"""
 
 	def __init__(self, parent, window):
-		MountManagerExtension.__init__(self, parent, window)
+		MountManagerExtension.__init__(self, parent, window, accessible_prefix='volumes')
 		self._store = gtk.ListStore(str, str, str, str, bool, object)
 		self._volumes = {}
 
@@ -530,6 +533,7 @@ class VolumesExtension(MountManagerExtension):
 		container.set_policy(gtk.POLICY_AUTOMATIC, gtk.POLICY_ALWAYS)
 
 		self._list = gtk.TreeView(model=self._store)
+		self._list.get_accessible().set_name('volumes_table')
 		self._list.set_show_expanders(True)
 		self._list.set_search_column(MountsColumn.NAME)
 
