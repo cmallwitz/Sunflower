@@ -66,6 +66,7 @@ class GioProvider(Provider):
 		to_scan.append(real_path)
 
 		# traverse through directories
+		# TODO: Check if this is really necessary. Recursive removal seems to be automatic.
 		while len(to_scan) > 0:
 			current_path = to_scan.pop(0)
 			info_list = gio.File(current_path).enumerate_children('standard::name,standard::type')
@@ -254,6 +255,11 @@ class GioProvider(Provider):
 					long(change)
 				)
 
+	def move_path(self, source, destination, relative_to=None):
+		"""Move path on same file system to a different parent node """
+		real_source = self._real_path(source, relative_to)
+		gio.File(real_source).move(gio.File(destination))
+
 	def rename_path(self, source, destination, relative_to=None):
 		"""Rename file/directory within parents path"""
 		real_source = self._real_path(source, relative_to)
@@ -404,6 +410,11 @@ class TrashProvider(GioProvider):
 	is_local = True
 	protocol = 'trash'
 
+	def remove_directory(self, path, relative_to=None):
+		"""Remove directory and optionally its contents"""
+		real_path = self._real_path(path, relative_to)
+		gio.File(real_path).delete()
+
 	def get_protocol_icon(self):
 		"""Return protocol icon name"""
 		return 'user-trash'
@@ -445,3 +456,30 @@ class DavsProvider(GioProvider):
 		return (
 			Support.SYSTEM_SIZE,
 		)
+
+
+class Gphoto2Provider(GioProvider):
+	is_local = True
+	protocol = 'gphoto2'
+
+	def get_protocol_icon(self):
+		"""Return protocol icon name"""
+		return 'camera-photo'
+
+	def get_support(self):
+		"""Return supported options by provider"""
+		return ()
+
+
+class MtpProvider(GioProvider):
+	is_local = True
+	protocol = 'mtp'
+
+	def get_protocol_icon(self):
+		"""Return protocol icon name"""
+		return 'multimedia-player'
+
+	def get_support(self):
+		"""Return supported options by provider"""
+		return ()
+

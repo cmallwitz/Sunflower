@@ -10,6 +10,7 @@ from gui.error_list import ErrorList
 from plugin_base.provider import Mode as FileMode, TrashError, Support as ProviderSupport
 from plugin_base.monitor import MonitorSignals
 from common import format_size
+from queue import OperationQueue
 
 # import constants
 from gui.input_dialog import OverwriteOption
@@ -29,6 +30,17 @@ class Option:
 	SILENT = 5
 	SILENT_MERGE = 6
 	SILENT_OVERWRITE = 7
+
+
+class Skip:
+	TRASH = 0
+	REMOVE = 1
+	WRITE = 2
+	CREATE = 3
+	MODE_SET = 4
+	MOVE = 5
+	RENAME = 6
+	READ = 7
 
 
 class OperationType:
@@ -52,6 +64,13 @@ class Operation(Thread):
 		self._options = options
 		self._source_queue = None
 		self._destination_queue = None
+		self._merge_all = None
+		self._overwrite_all = None
+		self._response_cache = {}
+
+		# operation queue
+		self._operation_queue = None
+		self._operation_queue_name = None
 
 		# daemonize
 		self.daemon = True
@@ -134,8 +153,7 @@ class Operation(Thread):
 				dialog = OverwriteDirectoryDialog(self._application, self._dialog.get_window())
 
 				title_element = os.path.basename(path)
-				message_element = os.path.basename(os.path.dirname(
-									os.path.join(self._destination.get_path(), path)))
+				message_element = os.path.basename(os.path.dirname(os.path.join(self._destination.get_path(), path)))
 
 				dialog.set_title_element(title_element)
 				dialog.set_message_element(message_element)
@@ -177,8 +195,7 @@ class Operation(Thread):
 				dialog = OverwriteFileDialog(self._application, self._dialog.get_window())
 
 				title_element = os.path.basename(path)
-				message_element = os.path.basename(os.path.dirname(
-									os.path.join(self._destination.get_path(), path)))
+				message_element = os.path.basename(os.path.dirname(os.path.join(self._destination.get_path(), path)))
 
 				dialog.set_title_element(title_element)
 				dialog.set_message_element(message_element)
@@ -214,7 +231,7 @@ class Operation(Thread):
 		if self._options is not None and self._options[Option.SILENT]:
 			# we are in silent mode, set response and log error
 			self._error_list.append(str(error))
-			response = gtk.RESPONSE_NO
+			response = OperationError.RESPONSE_SKIP
 
 		else:
 			# we are not in silent mode, ask user
@@ -227,10 +244,16 @@ class Operation(Thread):
 					))
 				dialog.set_error(str(error))
 
+				# get users response
 				response = dialog.get_response()
 
+				# check if this response applies to future errors
+				if response == OperationError.RESPONSE_SKIP_ALL:
+					response = OperationError.RESPONSE_SKIP
+					self._response_cache[Skip.WRITE] = response
+
 				# abort operation if user requested
-				if response == gtk.RESPONSE_CANCEL:
+				if response == OperationError.RESPONSE_CANCEL:
 					self.cancel()
 
 		return response
@@ -240,7 +263,7 @@ class Operation(Thread):
 		if self._options is not None and self._options[Option.SILENT]:
 			# we are in silent mode, set response and log error
 			self._error_list.append(str(error))
-			response = gtk.RESPONSE_NO
+			response = OperationError.RESPONSE_SKIP
 
 		else:
 			# we are not in silent mode, ask user
@@ -266,6 +289,11 @@ class Operation(Thread):
 				# get user response
 				response = dialog.get_response()
 
+				# check if this response applies to future errors
+				if response == OperationError.RESPONSE_SKIP_ALL:
+					response = OperationError.RESPONSE_SKIP
+					self._response_cache[Skip.CREATE] = response
+
 				# abort operation if user requested
 				if response == gtk.RESPONSE_CANCEL:
 					self.cancel()
@@ -277,7 +305,7 @@ class Operation(Thread):
 		if self._options is not None and self._options[Option.SILENT]:
 			# we are in silent mode, set response and log error
 			self._error_list.append(str(error))
-			response = gtk.RESPONSE_NO
+			response = OperationError.RESPONSE_SKIP
 
 		else:
 			# we are not in silent mode, ask user
@@ -294,6 +322,11 @@ class Operation(Thread):
 				# get user response
 				response = dialog.get_response()
 
+				# check if this response applies to future errors
+				if response == OperationError.RESPONSE_SKIP_ALL:
+					response = OperationError.RESPONSE_SKIP
+					self._response_cache[Skip.MODE_SET] = response
+
 				# abort operation if user requested
 				if response == gtk.RESPONSE_CANCEL:
 					self.cancel()
@@ -305,7 +338,7 @@ class Operation(Thread):
 		if self._options is not None and self._options[Option.SILENT]:
 			# we are in silent mode, set response and log error
 			self._error_list.append(str(error))
-			response = gtk.RESPONSE_NO
+			response = OperationError.RESPONSE_SKIP
 
 		else:
 			# we are not in silent mode, ask user
@@ -318,7 +351,13 @@ class Operation(Thread):
 					))
 				dialog.set_error(str(error))
 
+				# get users response
 				response = dialog.get_response()
+
+				# check if this response applies to future errors
+				if response == OperationError.RESPONSE_SKIP_ALL:
+					response = OperationError.RESPONSE_SKIP
+					self._response_cache[Skip.REMOVE] = response
 
 				# abort operation if user requested
 				if response == gtk.RESPONSE_CANCEL:
@@ -344,7 +383,13 @@ class Operation(Thread):
 					))
 				dialog.set_error(str(error))
 
+				# get users response
 				response = dialog.get_response()
+
+				# check if this response applies to future errors
+				if response == OperationError.RESPONSE_SKIP_ALL:
+					response = OperationError.RESPONSE_SKIP
+					self._response_cache[Skip.TRASH] = response
 
 				# abort operation if user requested
 				if response == gtk.RESPONSE_CANCEL:
@@ -370,7 +415,13 @@ class Operation(Thread):
 					))
 				dialog.set_error(str(error))
 
+				# get users response
 				response = dialog.get_response()
+
+				# check if this response applies to future errors
+				if response == OperationError.RESPONSE_SKIP_ALL:
+					response = OperationError.RESPONSE_SKIP
+					self._response_cache[Skip.MOVE] = response
 
 				# abort operation if user requested
 				if response == gtk.RESPONSE_CANCEL:
@@ -396,7 +447,13 @@ class Operation(Thread):
 					))
 				dialog.set_error(str(error))
 
+				# get users response
 				response = dialog.get_response()
+
+				# check if this response applies to future errors
+				if response == OperationError.RESPONSE_SKIP_ALL:
+					response = OperationError.RESPONSE_SKIP
+					self._response_cache[Skip.RENAME] = response
 
 				# abort operation if user requested
 				if response == gtk.RESPONSE_CANCEL:
@@ -422,7 +479,13 @@ class Operation(Thread):
 					))
 				dialog.set_error(str(error))
 
+				# get users response
 				response = dialog.get_response()
+
+				# check if this response applies to future errors
+				if response == OperationError.RESPONSE_SKIP_ALL:
+					response = OperationError.RESPONSE_SKIP
+					self._response_cache[Skip.READ] = response
 
 				# abort operation if user requested
 				if response == gtk.RESPONSE_CANCEL:
@@ -434,12 +497,24 @@ class Operation(Thread):
 		"""Set list of selected items"""
 		self._selection_list.extend(item_list)
 
+	def set_operation_queue(self, queue_name):
+		"""Set operation to wait for queue."""
+		if queue_name is None:
+			return
+
+		# create new queue
+		self._operation_queue = Event()
+		self._operation_queue_name = queue_name
+
+		# schedule operation
+		OperationQueue.add(queue_name, self._operation_queue)
+
 	def set_source_queue(self, queue):
-		"""Set event queue for fallback monitor support"""
+		"""Set event queue for fall-back monitor support"""
 		self._source_queue = queue
 
 	def set_destination_queue(self, queue):
-		"""Set event queue for fallback monitor support"""
+		"""Set event queue for fall-back monitor support"""
 		self._destination_queue = queue
 
 	def pause(self):
@@ -577,10 +652,14 @@ class CopyOperation(Operation):
 
 		except StandardError as error:
 			# problem setting mode, ask user
-			response = self._get_mode_set_error_input(error)
+			if Skip.MODE_SET in self._response_cache:
+				response = self._response_cache[Skip.MODE_SET]
+			else:
+				response = self._get_mode_set_error_input(error)
 
-			if response == gtk.RESPONSE_YES:
-				self._set_mode(path, mode)  # try to set mode again
+			# try to set mode again
+			if response == OperationError.RESPONSE_RETRY:
+				self._set_mode(path, mode)
 
 			return
 
@@ -604,10 +683,14 @@ class CopyOperation(Operation):
 
 		except StandardError as error:
 			# problem with setting owner, ask user
-			response = self._get_mode_set_error_input(error)
+			if Skip.MODE_SET in self._response_cache:
+				response = self._response_cache[Skip.MODE_SET]
+			else:
+				response = self._get_mode_set_error_input(error)
 
-			if response == gtk.RESPONSE_YES:
-				self._set_owner(path, user_id, group_id)  # try to set owner again
+			# try to set owner again
+			if response == OperationError.RESPONSE_RETRY:
+				self._set_owner(path, user_id, group_id)
 
 			return
 
@@ -632,9 +715,13 @@ class CopyOperation(Operation):
 
 		except StandardError as error:
 			# problem with setting owner, ask user
-			response = self._get_mode_set_error_input(error)
+			if Skip.MODE_SET in self._response_cache:
+				response = self._response_cache[Skip.MODE_SET]
+			else:
+				response = self._get_mode_set_error_input(error)
 
-			if response == gtk.RESPONSE_YES:
+			# try to set timestamp again
+			if response == OperationError.RESPONSE_RETRY:
 				self._set_timestamp(path, access_time, modify_time, change_time)
 
 			return
@@ -648,9 +735,13 @@ class CopyOperation(Operation):
 
 		except StandardError as error:
 			# problem with reading specified directory, ask user
-			response = self._get_read_error_input(error)
+			if Skip.READ in self._response_cache:
+				response = self._response_cache[Skip.READ]
+			else:
+				response = self._get_read_error_input(error)
 
-			if response == gtk.RESPONSE_YES:
+			# try to scan specified directory again
+			if response == OperationError.RESPONSE_RETRY:
 				self._scan_directory(directory, relative_path)
 
 			return
@@ -724,10 +815,13 @@ class CopyOperation(Operation):
 
 		except StandardError as error:
 			# there was a problem creating directory
-			response = self._get_create_error_input(error, True)
+			if Skip.CREATE in self._response_cache:
+				response = self._response_cache[Skip.CREATE]
+			else:
+				response = self._get_create_error_input(error, True)
 
-			# handle user response
-			if response == gtk.RESPONSE_YES:
+			# try to create directory again
+			if response == OperationError.RESPONSE_RETRY:
 				self._create_directory(directory)
 
 			# exit method
@@ -813,11 +907,14 @@ class CopyOperation(Operation):
 			if hasattr(sh, 'close'): sh.close()
 			if hasattr(dh, 'close'): sh.close()
 
-			response = self._get_create_error_input(error)
+			if Skip.CREATE in self._response_cache:
+				response = self._response_cache[Skip.CREATE]
+			else:
+				response = self._get_create_error_input(error)
 
-			# handle user response
-			if response == gtk.RESPONSE_YES:
-				self._copy_file(dest_file)  # retry copying this file
+			# try to create file again and copy contents
+			if response == OperationError.RESPONSE_RETRY:
+				self._copy_file(dest_file)
 
 			else:
 				# user didn't want to retry, remove file from list
@@ -842,9 +939,13 @@ class CopyOperation(Operation):
 
 				except IOError as error:
 					# handle error
-					response = self._get_write_error_input(error)
+					if Skip.WRITE in self._response_cache:
+						response = self._response_cache[Skip.WRITE]
+					else:
+						response = self._get_write_error_input(error)
 
-					if response == gtk.RESPONSE_YES:
+					# try to write data again
+					if response == OperationError.RESPONSE_RETRY:
 						gobject.idle_add(self._dialog.increment_current_size, -dh.tell())
 						if hasattr(sh, 'close'): sh.close()
 						if hasattr(dh, 'close'): sh.close()
@@ -925,6 +1026,10 @@ class CopyOperation(Operation):
 			self._dialog.set_source(self._source_path)
 			self._dialog.set_destination(self._destination_path)
 
+		# wait for operation queue if needed
+		if self._operation_queue is not None:
+			self._operation_queue.wait()
+
 		# get list of items to copy
 		self._get_lists()
 
@@ -980,13 +1085,18 @@ class CopyOperation(Operation):
 		# destroy dialog
 		self._destroy_ui()
 
+		# start next operation
+		if self._operation_queue is not None:
+			OperationQueue.start_next(self._operation_queue_name)
+
 
 class MoveOperation(CopyOperation):
 	"""Operation thread used for moving files"""
 
 	def _remove_path(self, path, item_list, relative_path=None):
-		"""Remove path"""
+		"""Remove path specified path."""
 		source_path = self._source_path if relative_path is None else os.path.join(self._source_path, relative_path)
+
 		try:
 			# try removing specified path
 			self._source.remove_path(path, relative_to=source_path)
@@ -998,11 +1108,14 @@ class MoveOperation(CopyOperation):
 
 		except StandardError as error:
 			# problem removing path, ask user what to do
-			response = self._get_remove_error_input(error)
+			if Skip.REMOVE in self._response_cache:
+				response = self._response_cache[Skip.REMOVE]
+			else:
+				response = self._get_remove_error_input(error)
 
-			# handle user response
-			if response == gtk.RESPONSE_YES:
-				self._remove_path(path, item_list)  # retry removing path
+			# try removing path again
+			if response == OperationError.RESPONSE_RETRY:
+				self._remove_path(path, item_list)
 
 			else:
 				# user didn't want to retry, remove path from item_list
@@ -1039,7 +1152,7 @@ class MoveOperation(CopyOperation):
 
 		# move file
 		try:
-			self._source.rename_path(
+			self._source.move_path(
 								file_name,
 								os.path.join(self._destination_path, dest_file),
 								relative_to=source_path
@@ -1056,11 +1169,14 @@ class MoveOperation(CopyOperation):
 
 		except StandardError as error:
 			# problem with moving file, ask user what to do
-			response = self._get_move_error_input(error)
+			if Skip.MOVE in self._response_cache:
+				response = self._response_cache[Skip.MOVE]
+			else:
+				response = self._get_move_error_input(error)
 
-			# handle user response
-			if response == gtk.RESPONSE_YES:
-				self._move_file(dest_file)  # retry copying this file
+			# try moving file again
+			if response == OperationError.RESPONSE_RETRY:
+				self._move_file(dest_file)
 
 			else:
 				# user didn't want to retry, remove file from list
@@ -1162,6 +1278,11 @@ class MoveOperation(CopyOperation):
 			self._dialog.set_source(self._source_path)
 			self._dialog.set_destination(self._destination_path)
 
+		# wait for operation queue if needed
+		if self._operation_queue is not None:
+			self._operation_queue.wait()
+
+		# get list of items
 		self._get_lists()
 
 		# check for available free space
@@ -1225,6 +1346,10 @@ class MoveOperation(CopyOperation):
 		# destroy dialog
 		self._destroy_ui()
 
+		# start next operation
+		if self._operation_queue is not None:
+			OperationQueue.start_next(self._operation_queue_name)
+
 
 class DeleteOperation(Operation):
 	"""Operation thread used for deleting files"""
@@ -1252,15 +1377,14 @@ class DeleteOperation(Operation):
 
 		except StandardError as error:
 			# problem removing path, ask user what to do
-			response = self._get_remove_error_input(error)
-
-			# handle user response
-			if response == gtk.RESPONSE_YES:
-				self._remove_path(path)  # retry removing path
-
+			if Skip.REMOVE in self._response_cache:
+				response = self._response_cache[Skip.REMOVE]
 			else:
-				# user didn't want to retry, remove path from list
-				self._file_list.pop(self._file_list.index(path))
+				response = self._get_remove_error_input(error)
+
+			# try removing path again
+			if response == OperationError.RESPONSE_RETRY:
+				self._remove_path(path)
 
 	def _trash_path(self, path):
 		"""Move path to the trash"""
@@ -1275,15 +1399,14 @@ class DeleteOperation(Operation):
 
 		except TrashError as error:
 			# problem removing path, ask user what to do
-			response = self._get_trash_error_input(error)
-
-			# handle user response
-			if response == gtk.RESPONSE_YES:
-				self._remove_path(path)  # retry removing path
-
+			if Skip.TRASH in self._response_cache:
+				response = self._response_cache[Skip.TRASH]
 			else:
-				# user didn't want to retry, remove path from list
-				self._file_list.pop(self._file_list.index(path))
+				response = self._get_trash_error_input(error)
+
+			# try moving path to trash again
+			if response == OperationError.RESPONSE_RETRY:
+				self._remove_path(path)
 
 	def set_force_delete(self, force):
 		"""Set forced deletion instead of trashing files"""
@@ -1292,6 +1415,10 @@ class DeleteOperation(Operation):
 	def run(self):
 		"""Main thread method, this is where all the stuff is happening"""
 		self._file_list = self._selection_list[:]  # use predefined selection list
+
+		# wait for operation queue if needed
+		if self._operation_queue is not None:
+			self._operation_queue.wait()
 
 		with gtk.gdk.lock:
 			# clear selection on source directory
@@ -1352,6 +1479,10 @@ class DeleteOperation(Operation):
 		# destroy dialog
 		self._destroy_ui()
 
+		# start next operation
+		if self._operation_queue is not None:
+			OperationQueue.start_next(self._operation_queue_name)
+
 
 class RenameOperation(Operation):
 	"""Thread used for rename of large number of files"""
@@ -1403,11 +1534,14 @@ class RenameOperation(Operation):
 
 		except StandardError as error:
 			# problem renaming path, ask user what to do
-			response = self._get_rename_error_input(error)
+			if Skip.RENAME in self._response_cache:
+				response = self._response_cache[Skip.RENAME]
+			else:
+				response = self._get_rename_error_input(error)
 
-			# handle user response
-			if response == gtk.RESPONSE_YES:
-				self._remove_path(old_name, new_name, index)  # retry renaming path
+			# try renaming path again
+			if response == OperationError.RESPONSE_RETRY:
+				self._remove_path(old_name, new_name, index)
 
 			else:
 				# user didn't want to retry, remove path from list
@@ -1415,6 +1549,10 @@ class RenameOperation(Operation):
 
 	def run(self):
 		"""Main thread method, this is where all the stuff is happening"""
+		# wait for operation queue if needed
+		if self._operation_queue is not None:
+			self._operation_queue.wait()
+
 		for index, item in enumerate(self._file_list, 1):
 			if self._abort.is_set(): break  # abort operation if requested
 			self._can_continue.wait()  # pause lock
@@ -1453,3 +1591,7 @@ class RenameOperation(Operation):
 
 		# destroy dialog
 		self._destroy_ui()
+
+		# start next operation
+		if self._operation_queue is not None:
+			OperationQueue.start_next(self._operation_queue_name)

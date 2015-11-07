@@ -8,6 +8,8 @@ import user
 from plugin_base.provider import FileType, Support as ProviderSupport
 from common import get_user_directory, UserDirectory
 from widgets.completion_entry import PathCompletionEntry
+from queue import OperationQueue
+
 
 # constants
 class OverwriteOption:
@@ -546,6 +548,7 @@ class FileCreateDialog(CreateDialog):
 
 
 class DirectoryCreateDialog(CreateDialog):
+	"""Simple dialog used for creating directories."""
 
 	def __init__(self, application):
 		CreateDialog.__init__(self, application)
@@ -560,6 +563,55 @@ class DirectoryCreateDialog(CreateDialog):
 		section.set('directory_mode', self._mode)
 
 
+class DeleteDialog(gtk.MessageDialog):
+	"""Confirmation dialog for item removal with operation queue selection."""
+
+	def __init__(self, application, message):
+		gtk.MessageDialog.__init__(
+				self,
+				parent=application,
+				flags=gtk.DIALOG_DESTROY_WITH_PARENT,
+				type=gtk.MESSAGE_QUESTION,
+				buttons=gtk.BUTTONS_YES_NO,
+				message_format=message
+			)
+
+		# create user interface for operation queue
+		vbox_queue = gtk.VBox(False, 0)
+
+		label_queue = gtk.Label(_('Operation queue:'))
+		label_queue.set_alignment(0, 0.5)
+
+		cell_name = gtk.CellRendererText()
+
+		self.combobox_queue = gtk.ComboBox(model=OperationQueue.get_model())
+		self.combobox_queue.pack_start(cell_name, True)
+		self.combobox_queue.add_attribute(cell_name, 'text', OperationQueue.COLUMN_TEXT)
+		self.combobox_queue.set_active(0)
+		self.combobox_queue.set_row_separator_func(OperationQueue.handle_separator_check)
+		self.combobox_queue.connect('changed', OperationQueue.handle_queue_select, self)
+
+		# pack user interface
+		vbox_queue.pack_start(label_queue, False, False, 0)
+		vbox_queue.pack_start(self.combobox_queue, False, False, 0)
+
+		self.get_content_area().pack_start(vbox_queue, False, False, 0)
+		vbox_queue.show_all()
+
+		# focus default widget
+		self.get_widget_for_response(gtk.RESPONSE_YES).grab_focus()
+
+	def get_response(self):
+		"""Show dialog and get response code."""
+		code = self.run()
+		selected_iter = self.combobox_queue.get_active_iter()
+		queue_name = OperationQueue.get_name_from_iter(selected_iter)
+
+		self.destroy()
+
+		return code, queue_name
+
+
 class CopyDialog:
 	"""Dialog which will ask user for additional options before copying"""
 
@@ -571,7 +623,7 @@ class CopyDialog:
 		self._destination_provider = destination_provider
 
 		self._dialog_size = None
-		self._dialog.set_default_size(340, 10)
+		self._dialog.set_default_size(400, 10)
 		self._dialog.set_resizable(True)
 		self._dialog.set_skip_taskbar_hint(True)
 		self._dialog.set_modal(True)
@@ -594,7 +646,10 @@ class CopyDialog:
 		self.entry_destination.connect('activate', self._confirm_entry)
 
 		# additional options
+		hbox_additional = gtk.HBox(False, 10)
 		separator_file_type = gtk.HSeparator()
+		vbox_type = gtk.VBox(False, 0)
+		vbox_queue = gtk.VBox(False, 0)
 
 		label_type = gtk.Label(_('Only files of this type:'))
 		label_type.set_alignment(0, 0.5)
@@ -602,6 +657,19 @@ class CopyDialog:
 		self.entry_type = gtk.Entry()
 		self.entry_type.set_text('*')
 		self.entry_type.connect('changed', self._update_label)
+
+		label_queue = gtk.Label(_('Operation queue:'))
+		label_queue.set_alignment(0, 0.5)
+
+		cell_name = gtk.CellRendererText()
+
+		self.combobox_queue = gtk.ComboBox(model=OperationQueue.get_model())
+		self.combobox_queue.pack_start(cell_name, True)
+		self.combobox_queue.add_attribute(cell_name, 'text', OperationQueue.COLUMN_TEXT)
+		self.combobox_queue.set_active(0)
+		self.combobox_queue.set_row_separator_func(OperationQueue.handle_separator_check)
+		self.combobox_queue.connect('changed', OperationQueue.handle_queue_select, self._dialog)
+		self.combobox_queue.set_size_request(140, -1)
 
 		# detailed item list
 		separator_details = gtk.HSeparator()
@@ -664,11 +732,19 @@ class CopyDialog:
 
 		align_silent.add(vbox_silent)
 
+		vbox_type.pack_start(label_type, False, False, 0)
+		vbox_type.pack_start(self.entry_type, False, False, 0)
+
+		vbox_queue.pack_start(label_queue, False, False, 0)
+		vbox_queue.pack_start(self.combobox_queue, False, False, 0)
+
+		hbox_additional.pack_start(vbox_type, True, True, 0)
+		hbox_additional.pack_start(vbox_queue, True, True, 0)
+
 		vbox.pack_start(self.label_destination, False, False, 0)
 		vbox.pack_start(self.entry_destination, False, False, 0)
 		vbox.pack_start(separator_file_type, False, False, 5)
-		vbox.pack_start(label_type, False, False, 0)
-		vbox.pack_start(self.entry_type, False, False, 0)
+		vbox.pack_start(hbox_additional, False, False, 0)
 		vbox.pack_start(expand_details, False, False, 0)
 		vbox.pack_start(separator_details, False, False, 5)
 		vbox.pack_start(self.checkbox_owner, False, False, 0)
@@ -880,7 +956,7 @@ class CopyDialog:
 	def get_response(self):
 		"""Return value and self-destruct
 
-		This method returns tupple with response code and
+		This method returns tuple with response code and
 		dictionary with other selected options.
 
 		"""
@@ -895,10 +971,12 @@ class CopyDialog:
 				self.checkbox_merge.get_active(),
 				self.checkbox_overwrite.get_active()
 			)
+		selected_iter = self.combobox_queue.get_active_iter()
+		queue_name = OperationQueue.get_name_from_iter(selected_iter)
 
 		self._dialog.destroy()
 
-		return code, options
+		return code, options, queue_name
 
 
 class MoveDialog(CopyDialog):
@@ -1313,6 +1391,10 @@ class AddBookmarkDialog:
 
 class OperationError:
 	"""Dialog used to ask user about error occured during certain operation."""
+	RESPONSE_CANCEL = 0
+	RESPONSE_RETRY = 1
+	RESPONSE_SKIP = 2
+	RESPONSE_SKIP_ALL = 3
 
 	def __init__(self, application):
 		self._dialog = gtk.Dialog(parent=application)
@@ -1357,14 +1439,16 @@ class OperationError:
 		# create controls
 		button_cancel = gtk.Button(label=_('Cancel'))
 		button_skip = gtk.Button(label=_('Skip'))
+		button_skip_all = gtk.Button(label=_('Skip all'))
 		button_retry = gtk.Button(label=_('Retry'))
 
-		self._dialog.add_action_widget(button_cancel, gtk.RESPONSE_CANCEL)
-		self._dialog.add_action_widget(button_skip, gtk.RESPONSE_NO)
-		self._dialog.add_action_widget(button_retry, gtk.RESPONSE_YES)
+		self._dialog.add_action_widget(button_cancel, self.RESPONSE_CANCEL)
+		self._dialog.add_action_widget(button_skip, self.RESPONSE_SKIP)
+		self._dialog.add_action_widget(button_skip_all, self.RESPONSE_SKIP_ALL)
+		self._dialog.add_action_widget(button_retry, self.RESPONSE_RETRY)
 
 		button_skip.set_can_default(True)
-		self._dialog.set_default_response(gtk.RESPONSE_NO)
+		self._dialog.set_default_response(self.RESPONSE_SKIP)
 
 		# pack interface
 		vbox_icon.pack_start(icon, False, False, 0)
@@ -1817,6 +1901,9 @@ class PathInputDialog():
 
 	def set_text(self, entry_text):
 		"""Set main entry text"""
+		if not entry_text.endswith(os.path.sep):
+			entry_text = entry_text + os.path.sep
+
 		self._entry.set_text(entry_text)
 		self._entry.set_position(-1)
 

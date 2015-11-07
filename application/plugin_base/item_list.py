@@ -705,10 +705,10 @@ class ItemList(PluginBase):
 									gtk.MESSAGE_ERROR,
 									gtk.BUTTONS_OK,
 									_(
-										"Directory does not exist anymore or is not "
-										"valid. If path is not local check if specified "
-										"volume is mounted."
-									) +	"\n\n{0}".format(path)
+										'Directory does not exist anymore or is not '
+										'valid. If path is not local check if specified '
+										'volume is mounted.'
+									) +	'\n\n{0}'.format(path)
 								)
 			dialog.run()
 			dialog.destroy()
@@ -809,6 +809,9 @@ class ItemList(PluginBase):
 			event_queue = self.get_monitor_queue()
 			if event_queue is not None:
 				operation.set_destination_queue(event_queue)
+
+			# set operation queue
+			operation.set_operation_queue(dialog_result[2])
 
 			# start the operation
 			operation.set_selection(selection)

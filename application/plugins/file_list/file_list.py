@@ -9,7 +9,7 @@ import gobject
 
 from column_editor import FileList_ColumnEditor
 from gui.input_dialog import ApplicationSelectDialog
-from gui.input_dialog import CopyDialog, MoveDialog, RenameDialog
+from gui.input_dialog import CopyDialog, MoveDialog, RenameDialog, DeleteDialog
 from gui.input_dialog import FileCreateDialog, DirectoryCreateDialog, LinkDialog
 from gui.properties_window import PropertiesWindow
 from operation import DeleteOperation, CopyOperation, MoveOperation
@@ -314,8 +314,7 @@ class FileList(ItemList):
 
 			column_name = column.get_data('name')
 			font_size = options.get('font_size_{0}'.format(column_name)) or \
-				self._default_column_font_size.get(column_name, None) or \
-				int(gtk.Settings().get_property('gtk-font-name').split()[-1])
+				self._default_column_font_size.get(column_name, None)
 
 			# no font size was specified, skip column
 			if font_size is None:
@@ -802,16 +801,9 @@ class FileList(ItemList):
 						 )
 
 			# user has confirmation dialog enabled
-			dialog = gtk.MessageDialog(
-									self._parent,
-									gtk.DIALOG_DESTROY_WITH_PARENT,
-									gtk.MESSAGE_QUESTION,
-									gtk.BUTTONS_YES_NO,
-									message.format(len(selection))
-								)
+			dialog = DeleteDialog(self._parent, message.format(len(selection)))
 			dialog.set_default_response(gtk.RESPONSE_YES)
-			result = dialog.run()
-			dialog.destroy()
+			result, queue_name = dialog.get_response()
 
 			can_continue = result == gtk.RESPONSE_YES
 
@@ -835,6 +827,7 @@ class FileList(ItemList):
 			if event_queue is not None:
 				operation.set_source_queue(event_queue)
 
+			operation.set_operation_queue(queue_name)
 			operation.set_selection(selection)
 			operation.start()
 
@@ -879,6 +872,9 @@ class FileList(ItemList):
 			# set event queue
 			if destination_monitor is not None and destination_monitor.is_manual():
 				operation.set_destination_queue(destination_monitor.get_queue())
+
+			# set operation queue
+			operation.set_operation_queue(result[2])
 
 			operation.set_selection(selection)
 			operation.start()
@@ -1321,17 +1317,33 @@ class FileList(ItemList):
 			while len(path_fragments) > 0:
 				parent = self._find_iter_by_name(path_fragments.pop(0), parent)
 
+		# check for list of always hidden files
+		provider = self.get_provider(parent_path)
+		always_hidden = []
+
+		if not show_hidden and provider.exists('.hidden', relative_to=parent_path):
+			raw_file = provider.get_file_handle('.hidden', FileMode.READ, relative_to=parent_path)
+			always_hidden.extend(raw_file.read().splitlines())
+			raw_file.close()
+
 		# node created
 		if event is MonitorSignals.CREATED:
 			# temporarily fix problem with duplicating items when file was saved with GIO
 			if self._find_iter_by_name(path, parent) is None:
-				if (not show_hidden) \
-				and (path[0] == '.' or path[-1] == '~'):
-					return
+				should_add = True
+
+				# check for hidden item or backup file
+				if not show_hidden and (path[0] == '.' or path[-1] == '~'):
+					should_add = False
+
+				# check if path is in any of the filters
+				if should_add and len(always_hidden) > 0:
+					should_add = path not in always_hidden
 
 				# add item
-				self._add_item(path, parent, parent_path)
-				self._flush_queue(parent)
+				if should_add:
+					self._add_item(path, parent, parent_path)
+					self._flush_queue(parent)
 
 			else:
 				self._update_item_details_by_name(relative_path, parent)
@@ -2018,10 +2030,21 @@ class FileList(ItemList):
 				return
 
 			# remove hidden files if we don't need them
-			item_list = filter(
-							lambda item_name: show_hidden or (item_name[0] != '.' and item_name[-1] != '~'),
-							item_list
-						)
+			if not show_hidden:
+				always_hidden = []
+
+				# get list of always hidden files from the directory file
+				if provider.exists('.hidden', relative_to=path):
+					raw_file = provider.get_file_handle('.hidden', FileMode.READ, relative_to=path)
+					always_hidden.extend(raw_file.read().splitlines())
+					raw_file.close()
+
+				# filter out hidden items and backup files
+				item_list = filter(lambda name: name[0] != '.' and name[-1] != '~', item_list)
+
+				# filter out items specified in direcotry file or program
+				if len(always_hidden) > 0:
+					item_list = filter(lambda name: name not in always_hidden, item_list)
 
 			# assign item for selection
 			if not self._item_to_focus in item_list:
